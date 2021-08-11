@@ -28,6 +28,22 @@ def Connect_WiFi():
 
 	return wlan
 
+def Ntp_time():
+	client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+	addr = socket.getaddrinfo("pool.ntp.org", 123)[0][4]
+	# Send query
+	client.sendto('\x1b' + 47 * '\0', addr) # Get addr info via DNS
+	data, address = client.recvfrom(1024)
+
+	# Print time
+	TIMESTAMP = 2208988800+946684800
+	t = ustruct.unpack(">IIIIIIIIIIII", data)[10] - TIMESTAMP
+	print ("Year:%d Month:%d Day:%d Time: %d:%d:%d" % (utime.localtime(t)[0:6]))
+
+	client.close() # close socket
+
+	return t
+
 def File_Name(rtc):
 	# Extract the date and time from the RTC object.
 	dateTime = rtc.datetime()
@@ -63,24 +79,13 @@ def main():
 	try:
 		os.stat('dataset.csv')
 	except OSError: # If the log file doesn't exist then set the RTC with NTP and set newFile to True
-		client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		addr = socket.getaddrinfo("pool.ntp.org", 123)[0][4]
-		# Send query
-		client.sendto('\x1b' + 47 * '\0', addr) # Get addr info via DNS
-		data, address = client.recvfrom(1024)
-
-		# Print time
-		TIMESTAMP = 2208988800+946684800
-		t = ustruct.unpack(">IIIIIIIIIIII", data)[10] - TIMESTAMP
-		print ("Year:%d Month:%d Day:%d Time: %d:%d:%d" % (utime.localtime(t)[0:6]))
-
+		t = Ntp_time()
 		# datetime format: year, month, day, weekday (Monday=1, Sunday=7),
 		# hours (24 hour clock), minutes, seconds, subseconds (counds down from 255 to 0)
 		rtc.datetime((utime.localtime(t)[0], utime.localtime(t)[1], utime.localtime(t)[2],
 					utime.localtime(t)[6], utime.localtime(t)[3], utime.localtime(t)[4],
 					utime.localtime(t)[5], 0))
 		newFile = True
-		client.close() # close socket
 
 	# Enable RTC interrupts every 10 seconds, camera will RESET after wakeup from deepsleep Mode.
 	rtc.wakeup(10000)
