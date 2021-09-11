@@ -28,7 +28,7 @@ def Connect_WiFi():
 
 	return wlan
 
-def Ntp_time():
+def Ntp_Time():
 	client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 	addr = socket.getaddrinfo("pool.ntp.org", 123)[0][4]
 	# Send query
@@ -58,13 +58,20 @@ def File_Name(rtc):
 	newName='I'+year+month+day+hour+minute+second+'_' # Image file name based on RTC
 	return newName
 
-def Send_Prediction(prediction):
+def Send_Prediction(prediction, image):
 	print("Trying to connect with MQTT broker...")
-	client = MQTTClient("cloud_classifier_1", "m24.cloudmqtt.com", port=15462, user="",
-						password="")
+	client = MQTTClient("cloud_classifier_1", "m24.cloudmqtt.com", port=15462, user="kukgfblp",
+						password="Ti0MEQ-43WEU")
 	client.connect()
 	print("MQTT Connected...Sending Prediction...")
-	client.publish("cloud_type", prediction)
+
+	# Send prediction
+	client.publish("cloudType", prediction)
+	# Send image
+	client.publish("image", bytearray(image))
+	# Send battery level
+	client.publish("battery", '90')
+
 	print("MQTT published")
 	client.disconnect()
 
@@ -79,7 +86,7 @@ def main():
 	try:
 		os.stat('dataset.csv')
 	except OSError: # If the log file doesn't exist then set the RTC with NTP and set newFile to True
-		t = Ntp_time()
+		t = Ntp_Time()
 		# datetime format: year, month, day, weekday (Monday=1, Sunday=7),
 		# hours (24 hour clock), minutes, seconds, subseconds (counds down from 255 to 0)
 		rtc.datetime((utime.localtime(t)[0], utime.localtime(t)[1], utime.localtime(t)[2],
@@ -88,7 +95,8 @@ def main():
 		newFile = True
 
 	# Enable RTC interrupts every 10 seconds, camera will RESET after wakeup from deepsleep Mode.
-	rtc.wakeup(10000)
+	sleep_duration = 10
+	rtc.wakeup(sleep_duration*1000)
 
 	sensor.reset() # Initialize the camera sensor.
 	sensor.set_pixformat(sensor.GRAYSCALE)
@@ -143,7 +151,10 @@ def main():
 				datasetFile.write(str(predictions_list[i][1]) + ', ')
 			datasetFile.write(predicted_label + '\n')
 
-	Send_Prediction(predicted_label) # Send predicted label to a remote server
+	file_name = 'images/'+newName+'.bmp'
+	latest_image = open(str(file_name), "rb")
+	image_content = latest_image.read()
+	Send_Prediction(predicted_label, image_content) # Send prediction to a remote server
 
 	time.sleep_ms(10*1000)
 	pyb.LED(BLUE_LED_PIN).off()
