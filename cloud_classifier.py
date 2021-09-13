@@ -9,7 +9,7 @@
 # pictures it will run the bootloader each time. Please power the camera
 # from something other than USB to not have the bootloader run.
 
-import pyb, machine, sensor, image, pyb, os, time, tf
+import pyb, machine, sensor, os, tf, gc, time
 import network, socket, ustruct, utime
 from mqtt import MQTTClient
 
@@ -68,52 +68,19 @@ def Send_Prediction(prediction, image):
 	# Send prediction
 	client.publish("cloudType", prediction)
 	# Send image
-	client.publish("image", bytearray(image))
+	client.publish("image", image)
 	# Send battery level
 	client.publish("battery", '90')
 
 	print("MQTT published")
 	client.disconnect()
 
-def main():
-	# Create and init RTC object. This will allow us to set the current time for
-	# the RTC and let us set an interrupt to wake up later on.
-	rtc = pyb.RTC()
-	newFile = False
-	wlan = Connect_WiFi()
-	BLUE_LED_PIN = 3
-
-	try:
-		os.stat('dataset.csv')
-	except OSError: # If the log file doesn't exist then set the RTC with NTP and set newFile to True
-		t = Ntp_Time()
-		# datetime format: year, month, day, weekday (Monday=1, Sunday=7),
-		# hours (24 hour clock), minutes, seconds, subseconds (counds down from 255 to 0)
-		rtc.datetime((utime.localtime(t)[0], utime.localtime(t)[1], utime.localtime(t)[2],
-					utime.localtime(t)[6], utime.localtime(t)[3], utime.localtime(t)[4],
-					utime.localtime(t)[5], 0))
-		newFile = True
-
-	# Enable RTC interrupts every 10 seconds, camera will RESET after wakeup from deepsleep Mode.
-	sleep_duration = 10
-	rtc.wakeup(sleep_duration*1000)
-
-	sensor.reset() # Initialize the camera sensor.
-	sensor.set_pixformat(sensor.GRAYSCALE)
-	sensor.set_framesize(sensor.QVGA)
-	sensor.skip_frames(time = 2000) # Let new settings take affect.
-
+def Inference(img):
 	# Load tf network and labels
 	net = "trained.tflite"
 	labels = [line.rstrip('\n') for line in open("labels.txt")]
-
-	# Let folks know we are about to take a picture.
-	pyb.LED(BLUE_LED_PIN).on()
-
-	# Take photo and perform classification
-	img = sensor.snapshot()
-
 	predicted_label = ''
+
 	# default settings just do one detection... change them to search the image...
 	for obj in tf.classify(net, img, min_scale=1.0, scale_mul=0.8, x_overlap=0.5, y_overlap=0.5):
 		# This combines the labels and confidence values into a list of tuples
@@ -128,36 +95,87 @@ def main():
 		for i in range(len(predictions_list)):
 			print("%s = %f" % (predictions_list[i][0], predictions_list[i][1]))
 
-	newName = File_Name(rtc) + predicted_label
-	if not "images" in os.listdir(): os.mkdir("images") # Make an images directory
-	img.save('images/' + newName, quality=100)
+	return predicted_label, predictions_list
 
-	if(newFile): # If dataset file does not exist then create it.
-		with open('dataset.csv', 'a') as datasetFile: # Write text file to keep track of image and predictions.
-			# Prepare heading
-			datasetFile.write('Image_File_Name, ')
-			for i in range(len(labels)):
-				datasetFile.write(labels[i] + ', ')
-			datasetFile.write('Prediction' + '\n')
-			# Write 1st observation
-			datasetFile.write(newName + ', ')
-			for i in range(len(predictions_list)):
-				datasetFile.write(str(predictions_list[i][1]) + ', ')
-			datasetFile.write(predicted_label + '\n')
-	else:
-		with open('dataset.csv', 'a') as datasetFile: # Append image and predictions in the dataset file.
-			datasetFile.write(newName + ', ')
-			for i in range(len(predictions_list)):
-				datasetFile.write(str(predictions_list[i][1]) + ', ')
-			datasetFile.write(predicted_label + '\n')
+def main():
+	# Create and init RTC object. This will allow us to set the current time for
+	# the RTC and let us set an interrupt to wake up later on.
+	demo = True
+	rtc = pyb.RTC()
+	newFile = False
+	wlan = Connect_WiFi()
+	BLUE_LED_PIN = 3
 
-	file_name = 'images/'+newName+'.bmp'
-	latest_image = open(str(file_name), "rb")
-	image_content = latest_image.read()
-	Send_Prediction(predicted_label, image_content) # Send prediction to a remote server
+	# Update RTC time
+	t = Ntp_Time()
+	# datetime format: year, month, day, weekday (Monday=1, Sunday=7),
+	# hours (24 hour clock), minutes, seconds, subseconds (counds down from 255 to 0)
+	rtc.datetime((utime.localtime(t)[0], utime.localtime(t)[1], utime.localtime(t)[2],
+				utime.localtime(t)[6], utime.localtime(t)[3], utime.localtime(t)[4],
+				utime.localtime(t)[5], 0))
 
-	time.sleep_ms(10*1000)
-	pyb.LED(BLUE_LED_PIN).off()
+	try:
+		os.stat('dataset.csv')
+	except OSError: # If the log file doesn't exist then set newFile to True
+		newFile = True
+
+	# Enable RTC interrupts every sleep_duration, camera will RESET after wakeup from deepsleep Mode.
+	sleep_duration = 60	# This duration should be in MINUTES.
+	rtc.wakeup(sleep_duration*60*1000)
+
+	sensor.reset() # Initialize the camera sensor.
+	sensor.set_pixformat(sensor.GRAYSCALE)
+	sensor.set_framesize(sensor.QVGA)
+	sensor.skip_frames(time = 2000) # Let new settings take affect.
+
+	while(True):
+		# Let folks know we are about to take a picture.
+		pyb.LED(BLUE_LED_PIN).on()
+
+		# Take photo and perform classification
+		img = sensor.snapshot()
+		predicted_label, predictions_list = Inference(img)
+
+		newName = File_Name(rtc) + predicted_label
+		if not "images" in os.listdir(): os.mkdir("images") # Make an images directory
+		img.save('images/' + newName, quality=100)
+
+		if(newFile): # If dataset file does not exist then create it.
+			with open('dataset.csv', 'a') as datasetFile: # Write text file to keep track of image and predictions.
+				# Prepare heading
+				datasetFile.write('Image_File_Name, ')
+				for i in range(len(labels)):
+					datasetFile.write(labels[i] + ', ')
+				datasetFile.write('Prediction' + '\n')
+				# Write 1st observation
+				datasetFile.write(newName + ', ')
+				for i in range(len(predictions_list)):
+					datasetFile.write(str(predictions_list[i][1]) + ', ')
+				datasetFile.write(predicted_label + '\n')
+		else:
+			with open('dataset.csv', 'a') as datasetFile: # Append image and predictions in the dataset file.
+				datasetFile.write(newName + ', ')
+				for i in range(len(predictions_list)):
+					datasetFile.write(str(predictions_list[i][1]) + ', ')
+				datasetFile.write(predicted_label + '\n')
+
+		# Read image from the memory
+		file_name = 'images/'+newName+'.bmp'
+		latest_image = open(str(file_name), "rb")
+		image_content = latest_image.read()
+
+		# Send prediction and image to a remote server
+		Send_Prediction(predicted_label, image_content)
+
+		del image_content
+		gc.collect()
+		latest_image.close()
+
+		time.sleep_ms(1000)
+		pyb.LED(BLUE_LED_PIN).off()
+
+		if not demo:
+			break;
 
 	# Disconnect wifi
 	wlan.disconnect()
