@@ -1,13 +1,4 @@
 # Untitled - By: Swapnil - Tue Aug 3 2021
-# Time Lapse Photos (Credit nedhorning)
-#
-# This example shows off how to take time lapse photos using your OpenMV
-# Cam and using the RTC module along with a timer interrupt to achieve
-# very low power operation.
-#
-# Note that if the USB is still plugged in when the camera is taking
-# pictures it will run the bootloader each time. Please power the camera
-# from something other than USB to not have the bootloader run.
 
 import pyb, machine, sensor, os, tf, gc, time
 import network, socket, ustruct, utime
