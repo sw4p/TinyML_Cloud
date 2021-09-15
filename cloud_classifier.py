@@ -49,7 +49,7 @@ def File_Name(rtc):
 	newName='I'+year+month+day+hour+minute+second+'_' # Image file name based on RTC
 	return newName
 
-def Send_Prediction(prediction, image):
+def Send_Prediction(prediction, image_name, image):
 	print("Trying to connect with MQTT broker...")
 	client = MQTTClient("cloud_classifier_1", "m24.cloudmqtt.com", port=15462, user="kukgfblp",
 						password="Ti0MEQ-43WEU")
@@ -58,6 +58,8 @@ def Send_Prediction(prediction, image):
 
 	# Send prediction
 	client.publish("cloudType", prediction)
+	# Send file name
+	client.publish("imageName", image_name)
 	# Send image
 	client.publish("image", image)
 	# Send battery level
@@ -156,14 +158,14 @@ def main():
 		image_content = latest_image.read()
 
 		# Send prediction and image to a remote server
-		Send_Prediction(predicted_label, image_content)
+		Send_Prediction(predicted_label, str(file_name), image_content)
 
 		del image_content
 		gc.collect()
 		latest_image.close()
 
-		time.sleep_ms(1000)
 		pyb.LED(BLUE_LED_PIN).off()
+		time.sleep_ms(5*1000)
 
 		if not demo:
 			break;
