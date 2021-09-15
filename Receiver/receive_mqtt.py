@@ -36,7 +36,7 @@ client = mqtt.Client()
 client.on_connect = on_connect
 client.on_message = on_message
 
-client.username_pw_set("kukgfblp", "Ti0MEQ-43WEU")
-client.connect("m24.cloudmqtt.com", 15462, 60)
+client.username_pw_set("your_username", "your_pwd")
+client.connect("your_broker_address", port, 60)
 
 client.loop_forever()
