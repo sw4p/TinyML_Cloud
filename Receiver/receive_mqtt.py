@@ -22,15 +22,16 @@ def on_message(client, userdata, msg):
     print("Topic : ", msg.topic)
     
     if (msg.topic == "image"):
-        f = open(image_name, "wb")  #there is a output.jpg which is different
+        f = open('images/'+image_name+'.jpg', "wb")
+        #print("message : ", msg.payload)
         f.write(base64.b64decode(msg.payload))
         f.close()
     elif (msg.topic == "battery"):
-        print("Battery Level : ", msg.payload)
+        print("Battery Level : ", msg.payload.decode("utf-8"))
     elif (msg.topic == "cloudType"):
-        print("Cloud Type : ", msg.payload)
+        print("Cloud Type : ", msg.payload.decode("utf-8"))
     elif (msg.topic == "imageName"):
-        image_name = msg.payload
+        image_name = msg.payload.decode("utf-8")
 
 client = mqtt.Client()
 client.on_connect = on_connect

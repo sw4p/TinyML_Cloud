@@ -1,7 +1,7 @@
-# Untitled - By: Swapnil - Tue Aug 3 2021
+# TinyML: Cloud Classfier - By: Swapnil - Tue Aug 3 2021
 
 import pyb, machine, sensor, os, tf, gc, time
-import network, socket, ustruct, utime
+import network, socket, ustruct, utime, random
 from mqtt import MQTTClient
 
 def Connect_WiFi():
@@ -49,24 +49,30 @@ def File_Name(rtc):
 	newName='I'+year+month+day+hour+minute+second+'_' # Image file name based on RTC
 	return newName
 
-def Send_Prediction(prediction, image_name, image):
+def Connect_MQTT():
 	print("Trying to connect with MQTT broker...")
-	client = MQTTClient("cloud_classifier_1", "m24.cloudmqtt.com", port=15462, user="kukgfblp",
-						password="Ti0MEQ-43WEU")
+	client = MQTTClient("cloud_classifier_1", "broker_address", port=port_number, user="user_name",
+						password="password")
 	client.connect()
-	print("MQTT Connected...Sending Prediction...")
+	print("MQTT Connected...")
+	return client
+
+def disconnect_MQTT(client):
+	client.disconnect()
+
+def Send_Prediction(client, prediction, image_name, image_content, battery_level):
+	print("Sending Prediction...")
 
 	# Send prediction
 	client.publish("cloudType", prediction)
 	# Send file name
 	client.publish("imageName", image_name)
 	# Send image
-	client.publish("image", image)
+	client.publish("image", image_content)
 	# Send battery level
-	client.publish("battery", '90')
+	client.publish("battery", battery_level)
 
 	print("MQTT published")
-	client.disconnect()
 
 def Inference(img):
 	# Load tf network and labels
@@ -88,16 +94,28 @@ def Inference(img):
 		for i in range(len(predictions_list)):
 			print("%s = %f" % (predictions_list[i][0], predictions_list[i][1]))
 
-	return predicted_label, predictions_list
+	return predicted_label, predictions_list, labels
+
+def Battery_Level():
+	return random.randint(0, 100)
 
 def main():
+	BLUE_LED_PIN = 3
+	GREEN_LED_PIN = 2
+	RED_LED_PIN = 1
+
+	# Keep system into demo mode. In this mode the system will NOT go into deepsleep
+	# and performs its task every 2 seconds.
+	demo = True
+
 	# Create and init RTC object. This will allow us to set the current time for
 	# the RTC and let us set an interrupt to wake up later on.
-	demo = True
 	rtc = pyb.RTC()
 	newFile = False
+
+	pyb.LED(BLUE_LED_PIN).on()
 	wlan = Connect_WiFi()
-	BLUE_LED_PIN = 3
+	pyb.LED(BLUE_LED_PIN).off()
 
 	# Update RTC time
 	t = Ntp_Time()
@@ -121,13 +139,16 @@ def main():
 	sensor.set_framesize(sensor.QVGA)
 	sensor.skip_frames(time = 2000) # Let new settings take affect.
 
+	pyb.LED(GREEN_LED_PIN).on()
+	client = Connect_MQTT()
+	pyb.LED(GREEN_LED_PIN).off()
 	while(True):
 		# Let folks know we are about to take a picture.
 		pyb.LED(BLUE_LED_PIN).on()
 
 		# Take photo and perform classification
 		img = sensor.snapshot()
-		predicted_label, predictions_list = Inference(img)
+		predicted_label, predictions_list, labels = Inference(img)
 
 		newName = File_Name(rtc) + predicted_label
 		if not "images" in os.listdir(): os.mkdir("images") # Make an images directory
@@ -158,18 +179,19 @@ def main():
 		image_content = latest_image.read()
 
 		# Send prediction and image to a remote server
-		Send_Prediction(predicted_label, str(file_name), image_content)
+		Send_Prediction(client, predicted_label, str(newName), bytearray(image_content), str(Battery_Level()))
 
 		del image_content
 		gc.collect()
 		latest_image.close()
 
 		pyb.LED(BLUE_LED_PIN).off()
-		time.sleep_ms(5*1000)
+		time.sleep_ms(2*1000)
 
 		if not demo:
 			break;
 
+	Disconnect_MQTT(client)
 	# Disconnect wifi
 	wlan.disconnect()
 
